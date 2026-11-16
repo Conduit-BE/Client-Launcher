@@ -19,22 +19,22 @@
 
 ## Quick start
 
-1. Download `ConduitClientLauncher.exe` from the [Launcher releases](https://github.com/Conduit-BE/Launcher/releases).
+1. Download `ConduitLauncher.exe` from the [Launcher releases](https://github.com/Conduit-BE/Launcher/releases).
 2. Run the executable. The launcher finds Minecraft, starts it, and injects Conduit Client.
 3. If Minecraft fails to start or Conduit does not appear in-game, check `%LOCALAPPDATA%\ConduitClient\logs\launcher.log`.
 
 ## Launch options
 
-Run these commands from the folder containing `ConduitClientLauncher.exe`.
+Run these commands from the folder containing `ConduitLauncher.exe`.
 
 | Command | Behavior |
 | --- | --- |
-| `.\ConduitClientLauncher.exe` | Detects a Minecraft installation automatically. |
-| `.\ConduitClientLauncher.exe --levi` | Starts the default LeviLauncher instance, even when a Store or Xbox installation is available. |
-| `.\ConduitClientLauncher.exe --levi 'Conduit - 1.26.60.5'` | Starts the named LeviLauncher instance. |
-| `.\ConduitClientLauncher.exe 'C:\path\to\Minecraft.Windows.exe'` | Starts the specified Minecraft executable. |
+| `.\ConduitLauncher.exe` | Detects a Minecraft installation automatically. |
+| `.\ConduitLauncher.exe --levi` | Starts the default LeviLauncher instance, even when a Store or Xbox installation is available. |
+| `.\ConduitLauncher.exe --levi 'Conduit - 1.26.60.5'` | Starts the named LeviLauncher instance. |
+| `.\ConduitLauncher.exe 'C:\path\to\Minecraft.Windows.exe'` | Starts the specified Minecraft executable. |
 
-For a portable LeviLauncher installation, place its EXE beside `ConduitClientLauncher.exe`. The launcher uses the LeviLauncher 1.1.0 CLI.
+For a portable LeviLauncher installation, place its EXE beside `ConduitLauncher.exe`. The launcher uses the LeviLauncher 1.1.0 CLI.
 
 ## How it works
 
@@ -69,4 +69,4 @@ On x64 Windows with .NET Framework 4.8, run:
 powershell.exe -NoProfile -File .\build.ps1
 ```
 
-The build writes `dist\ConduitClientLauncher.exe`.
+The build writes `dist\ConduitLauncher.exe`.
