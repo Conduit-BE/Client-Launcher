@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -14,6 +15,8 @@ using System.Web.Script.Serialization;
 internal static class Launcher
 {
     private const string DllName = "ConduitClient.dll";
+    private const string ReleasesUrl = "https://github.com/Conduit-BE/Client/releases/";
+    private const string LatestVersion = "latest";
     private const string GameExe = "Minecraft.Windows.exe";
     private const string PackageFamily = "Microsoft.MinecraftUWP_8wekyb3d8bbwe";
     private const ushort Amd64 = 0x8664;
@@ -45,9 +48,8 @@ internal static class Launcher
                         throw new ArgumentException("Usage: ConduitClientLauncher.exe --levi [instance name]");
                     string executable = useLevi ? null : GetExplicitExecutable(args);
                     string dll = Path.Combine(root, "dll", DllName);
-                    if (!File.Exists(dll))
-                        InstallDll(dll);
-                    ValidateDll(dll);
+                    string version = ReadVersion(Path.Combine(root, "config.json"), log);
+                    InstallDll(dll, version, log);
 
                     using (Process game = useLevi
                         ? LaunchLeviMinecraft(FindLeviLauncher(), args.Length == 2 ? args[1] : null)
@@ -84,23 +86,59 @@ internal static class Launcher
         catch (UnauthorizedAccessException) { }
     }
 
-    private sealed class Release
+    private static string ReadVersion(string config, string log)
     {
-        public bool draft { get; set; }
-        public DateTimeOffset? published_at { get; set; }
-        public Asset[] assets { get; set; }
+        if (!File.Exists(config))
+            return LatestVersion;
+
+        try
+        {
+            var json = new JavaScriptSerializer();
+            var settings = json.DeserializeObject(File.ReadAllText(config)) as IDictionary<string, object>;
+            object launcherValue;
+            object versionValue;
+            if (settings != null && settings.TryGetValue("launcher", out launcherValue))
+            {
+                var launcher = launcherValue as IDictionary<string, object>;
+                if (launcher != null && launcher.TryGetValue("version", out versionValue))
+                {
+                    string version = versionValue as string;
+                    if (!String.IsNullOrWhiteSpace(version))
+                    {
+                        version = version.Trim();
+                        if (!version.Split('/').Any(part => part.Length == 0 || part[0] == '.') &&
+                            !version.Any(c => Char.IsControl(c) || Char.IsWhiteSpace(c)) &&
+                            version.IndexOfAny(new[] { '~', '^', ':', '?', '*', '[', '\\' }) < 0 &&
+                            !version.Contains("..") && !version.Contains("@{") && !version.EndsWith("."))
+                        {
+                            return String.Equals(version, LatestVersion, StringComparison.OrdinalIgnoreCase)
+                                ? LatestVersion : version;
+                        }
+                    }
+
+                    Log(log, "Invalid launcher.version. Using latest.");
+                }
+            }
+        }
+        catch (ArgumentException error)
+        {
+            Log(log, "Invalid config.json. Using latest. " + error.Message);
+        }
+        catch (InvalidOperationException error)
+        {
+            Log(log, "Invalid config.json. Using latest. " + error.Message);
+        }
+
+        return LatestVersion;
     }
 
-    private sealed class Asset
+    private static HttpResponseMessage DownloadDll(HttpClient http, string version)
     {
-        public string name { get; set; }
-        public string state { get; set; }
-        public string browser_download_url { get; set; }
-        public string digest { get; set; }
-        public long size { get; set; }
+        string releasePath = version == LatestVersion ? "latest/download/" : "download/" + Uri.EscapeDataString(version) + "/";
+        return http.GetAsync(ReleasesUrl + releasePath + DllName).GetAwaiter().GetResult();
     }
 
-    private static void InstallDll(string path)
+    private static void InstallDll(string path, string version, string log)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -112,48 +150,48 @@ internal static class Launcher
             {
                 http.Timeout = TimeSpan.FromMinutes(2);
                 http.DefaultRequestHeaders.UserAgent.ParseAdd("ConduitClientLauncher/1.0");
-                var json = new JavaScriptSerializer();
-                Release[] releases = json.Deserialize<Release[]>(http.GetStringAsync(
-                    "https://api.github.com/repos/Conduit-BE/Client/releases?per_page=30").GetAwaiter().GetResult());
-                Release latest = releases.Where(release => !release.draft && release.published_at.HasValue)
-                    .OrderByDescending(release => release.published_at).FirstOrDefault();
-                Asset asset = latest == null || latest.assets == null ? null : latest.assets.FirstOrDefault(
-                    file => file.name == DllName && file.state == "uploaded");
-                if (asset == null)
-                    throw new InvalidOperationException("The latest published Conduit Client release has no " + DllName + " asset.");
+                Log(log, "Downloading Conduit Client " + version + ".");
+                HttpResponseMessage response = DownloadDll(http, version);
+                if (response.StatusCode == HttpStatusCode.NotFound && version != LatestVersion)
+                {
+                    response.Dispose();
+                    Log(log, "Release asset for " + version + " was not found. Downloading latest.");
+                    response = DownloadDll(http, LatestVersion);
+                }
 
-                var download = new Uri(asset.browser_download_url);
-                if (download.Scheme != Uri.UriSchemeHttps || download.Host != "github.com" ||
-                    !download.AbsolutePath.StartsWith("/Conduit-BE/Client/releases/download/", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Unexpected GitHub release asset URL.");
-
-                using (HttpResponseMessage response = http.GetAsync(download).GetAwaiter().GetResult())
+                using (response)
                 {
                     response.EnsureSuccessStatusCode();
                     using (Stream source = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
                     using (FileStream output = File.Create(temporary))
-                        source.CopyTo(output);
-                }
-
-                using (FileStream input = File.OpenRead(temporary))
-                {
-                    if (input.Length != asset.size)
-                        throw new InvalidDataException("The downloaded DLL size differs from the GitHub release asset.");
-
-                    if (!String.IsNullOrEmpty(asset.digest))
                     {
-                        using (SHA256 sha = SHA256.Create())
-                        {
-                            string digest = "sha256:" + BitConverter.ToString(sha.ComputeHash(input)).Replace("-", "");
-                            if (!String.Equals(digest, asset.digest, StringComparison.OrdinalIgnoreCase))
-                                throw new InvalidDataException("The downloaded DLL failed its GitHub SHA-256 check.");
-                        }
+                        source.CopyTo(output);
+                        long? contentLength = response.Content.Headers.ContentLength;
+                        if (contentLength.HasValue && output.Length != contentLength.Value)
+                            throw new InvalidDataException("The downloaded DLL size differs from the response content length.");
                     }
                 }
-
-                ValidateDll(temporary);
-                File.Move(temporary, path);
             }
+
+            ValidateDll(temporary);
+            if (!File.Exists(path))
+            {
+                File.Move(temporary, path);
+                return;
+            }
+
+            // Skip replacing an identical DLL, which may already be loaded in Minecraft.
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] downloadedHash;
+                using (FileStream downloaded = File.OpenRead(temporary))
+                    downloadedHash = sha.ComputeHash(downloaded);
+                using (FileStream installed = File.OpenRead(path))
+                    if (downloadedHash.SequenceEqual(sha.ComputeHash(installed)))
+                        return;
+            }
+
+            File.Replace(temporary, path, null);
         }
         finally
         {
