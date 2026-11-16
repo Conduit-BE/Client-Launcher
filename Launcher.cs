@@ -359,6 +359,15 @@ internal static class Launcher
             return started;
 
         started.Dispose();
+        Process game = WaitForMinecraft(executable);
+        if (game != null)
+            return game;
+
+        throw new TimeoutException("The Xbox game launch helper did not start " + executable + ".");
+    }
+
+    private static Process WaitForMinecraft(string executable)
+    {
         var startup = Stopwatch.StartNew();
         while (startup.Elapsed < TimeSpan.FromSeconds(30))
         {
@@ -368,7 +377,8 @@ internal static class Launcher
                 {
                     try
                     {
-                        if (String.Equals(candidate.MainModule.FileName, executable, StringComparison.OrdinalIgnoreCase))
+                        if (IsRegisteredMinecraft(candidate.Id) ||
+                            (executable != null && String.Equals(candidate.MainModule.FileName, executable, StringComparison.OrdinalIgnoreCase)))
                             return Process.GetProcessById(candidate.Id);
                     }
                     catch (InvalidOperationException) { }
@@ -377,7 +387,26 @@ internal static class Launcher
             }
             Thread.Sleep(100);
         }
-        throw new TimeoutException("The Xbox game launch helper did not start " + executable + ".");
+        return null;
+    }
+
+    private static bool IsRegisteredMinecraft(int processId)
+    {
+        IntPtr handle = OpenProcess(0x1000, false, processId); // PROCESS_QUERY_LIMITED_INFORMATION
+        if (handle == IntPtr.Zero)
+            return false;
+
+        try
+        {
+            uint length = 65; // Maximum package family name length, including the terminator.
+            var family = new StringBuilder((int)length);
+            return GetPackageFamilyName(handle, ref length, family) == 0 &&
+                String.Equals(family.ToString(), PackageFamily, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
     }
 
     private static Process ActivateMinecraft()
@@ -392,12 +421,8 @@ internal static class Launcher
             if (result < 0)
                 return null;
 
-            var game = Process.GetProcessById(checked((int)processId));
-            if (String.Equals(game.ProcessName + ".exe", GameExe, StringComparison.OrdinalIgnoreCase))
-                return game;
-
-            game.Dispose();
-            return null;
+            // The registered app can activate GameLaunchHelper before Minecraft itself starts.
+            return WaitForMinecraft(null);
         }
         finally
         {
@@ -539,6 +564,9 @@ internal static class Launcher
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, bool inherit, int processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int GetPackageFamilyName(IntPtr process, ref uint length, StringBuilder family);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool IsWow64Process2(IntPtr process, out ushort processMachine, out ushort nativeMachine);
