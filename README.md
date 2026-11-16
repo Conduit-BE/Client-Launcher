@@ -1,27 +1,72 @@
-# Conduit Client Launcher
+<p align="center">
+  <img src="./assets/logo.png" alt="Conduit Client logo">
+</p>
 
-A windowless Windows x64 launcher for Conduit Client and Minecraft for Windows (Bedrock Edition).
+<h1 align="center">Conduit Launcher</h1>
 
-Run `ConduitClientLauncher.exe`. The launcher reuses `%LOCALAPPDATA%\ConduitClient\dll\ConduitClient.dll` if present. Otherwise it installs the `ConduitClient.dll` asset from the most recently published [Conduit Client release](https://github.com/Conduit-BE/Client/releases), including betas. It checks the downloaded size, the SHA-256 digest when provided by GitHub, and the DLL's x64 PE header before installing it.
+<p align="center">
+  A windowless Windows x64 launcher for Minecraft Bedrock Edition and Conduit Client.
+</p>
 
-The launcher looks for `Minecraft.Windows.exe` beside itself, then tries the registered Minecraft for Windows app and looks in `XboxGames` on fixed drives. If those checks find no game, it looks for LeviLauncher and starts its default instance through the LeviLauncher 1.1.0 CLI. For a portable LeviLauncher, place its EXE beside this launcher.
+<div align="center">
+  <a href="https://discord.gg/bestack">
+    <img src="https://img.shields.io/discord/1402649772271210566?logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord">
+  </a>
+  <a href="https://github.com/Conduit-BE/Launcher/stargazers">
+    <img src="https://img.shields.io/github/stars/Conduit-BE/Launcher?style=for-the-badge" alt="GitHub stars">
+  </a>
+</div>
 
-Use `--levi` to select LeviLauncher even when a Store or Xbox install exists. You can optionally give the instance name as it appears in LeviLauncher:
+## Quick start
 
-```powershell
-.\ConduitClientLauncher.exe --levi 'Conduit - 1.26.60.5'
+1. Download `ConduitClientLauncher.exe` from the [Launcher releases](https://github.com/Conduit-BE/Launcher/releases).
+2. Run the executable. The launcher finds Minecraft, starts it, and injects Conduit Client.
+3. If Minecraft fails to start or Conduit does not appear in-game, check `%LOCALAPPDATA%\ConduitClient\logs\launcher.log`.
+
+## Launch options
+
+Run these commands from the folder containing `ConduitClientLauncher.exe`.
+
+| Command | Behavior |
+| --- | --- |
+| `.\ConduitClientLauncher.exe` | Detects a Minecraft installation automatically. |
+| `.\ConduitClientLauncher.exe --levi` | Starts the default LeviLauncher instance, even when a Store or Xbox installation is available. |
+| `.\ConduitClientLauncher.exe --levi 'Conduit - 1.26.60.5'` | Starts the named LeviLauncher instance. |
+| `.\ConduitClientLauncher.exe 'C:\path\to\Minecraft.Windows.exe'` | Starts the specified Minecraft executable. |
+
+For a portable LeviLauncher installation, place its EXE beside `ConduitClientLauncher.exe`. The launcher uses the LeviLauncher 1.1.0 CLI.
+
+## How it works
+
+The launcher reads `launcher.version` from `%LOCALAPPDATA%\ConduitClient\config.json` to choose which `ConduitClient.dll` to download from [Conduit Client releases](https://github.com/Conduit-BE/Client/releases).
+
+```json
+{
+  "launcher": {
+    "version": "latest"
+  }
+}
 ```
 
-You can also supply an explicit executable path from PowerShell:
+Use `latest` for the newest published release, including prereleases, or enter an exact release tag such as `v1.0.0-stable` to pin a version. If the setting is missing or invalid, the launcher falls back to `latest`.
+
+In automatic mode, the launcher checks for `Minecraft.Windows.exe` beside itself, then looks for a registered Minecraft for Windows installation and searches `XboxGames` on fixed drives. If those checks find no game, it looks for LeviLauncher and starts its default instance.
+
+## Compatibility and logs
+
+Conduit Client checks the Minecraft build during initialization. Windows can report that the DLL loaded successfully even if Conduit declines to initialize on an unsupported build. Check the [Conduit Client releases](https://github.com/Conduit-BE/Client/releases) for supported Minecraft versions and distributions.
+
+| Log | What to check |
+| --- | --- |
+| `%LOCALAPPDATA%\ConduitClient\logs\launcher.log` | DLL download, game detection, launch, and injection. |
+| `%LOCALAPPDATA%\ConduitClient\logs\standalone.log` | Conduit Client startup and compatibility checks. |
+
+## Build from source
+
+On x64 Windows with .NET Framework 4.8, run:
 
 ```powershell
-.\ConduitClientLauncher.exe 'C:\path\to\Minecraft.Windows.exe'
+powershell.exe -NoProfile -File .\build.ps1
 ```
 
-Minecraft starts through its package registration, Xbox launch helper, LeviLauncher, or executable, depending on how it was found. The launcher loads the DLL into the Minecraft process and checks that Windows lists it as a loaded module. Launcher diagnostics go to `%LOCALAPPDATA%\ConduitClient\logs\launcher.log`. For diagnostics from Conduit itself, see the [client documentation](https://github.com/Conduit-BE/Client).
-
-Conduit Client selects supported Minecraft executables by hash. A successfully loaded DLL can still decline to initialize on an unsupported build. See the release notes for supported versions and distributions. The `v0.4.4-beta` Windows release documents support for Bedrock 1.26.60.5 from LeviLauncher 1.1.0.
-
-## Build
-
-Run `powershell.exe -NoProfile -File .\build.ps1` on x64 Windows with .NET Framework 4.8. The executable is written to `dist\ConduitClientLauncher.exe`.
+The build writes `dist\ConduitClientLauncher.exe`.
